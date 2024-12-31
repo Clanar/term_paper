@@ -18,7 +18,7 @@ g++ -o termpaper  main.cpp inverted_index.cpp
 g++ -o client_cpp client.cpp
 ```
 ```
-,/client_cpp
+./client_cpp
 ```
 
 **Result:**
