@@ -4,6 +4,8 @@
 **Server:**
 ```
 g++ -o termpaper  main.cpp inverted_index.cpp
+```
+```
 ./termpaper
 ```
 
@@ -14,6 +16,8 @@ g++ -o termpaper  main.cpp inverted_index.cpp
 **Client cpp:**
 ```
 g++ -o client_cpp client.cpp
+```
+```
 ,/client_cpp
 ```
 
@@ -25,6 +29,8 @@ g++ -o client_cpp client.cpp
 **Add file:**
 ```
 telnet localhost 12345
+```
+```
 ADD text1 Manual request
 ```
 
@@ -35,6 +41,8 @@ ADD text1 Manual request
 **Search file:**
 ```
 telnet localhost 12345
+```
+```
 SEARCH request
 ```
 
@@ -46,6 +54,8 @@ SEARCH request
 **Delete file:**
 ```
 telnet localhost 12345
+```
+```
 DELETE text1
 ```
 
