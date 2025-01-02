@@ -43,7 +43,6 @@ void thread_pool<Result>::pause() {
     {
         std::unique_lock<std::mutex> lock(m_pause_mutex);
         m_paused = true;
-        m_task_waiter.wait(lock);
     }
     std::cout << "Pause" << std::endl;
 }
@@ -53,8 +52,8 @@ void thread_pool<Result>::resume() {
     {
         std::unique_lock<std::mutex> lock(m_pause_mutex);
         m_paused = false;
-        m_task_waiter.notify_all();
     }
+    m_task_waiter.notify_all();
     std::cout << "Resume" << std::endl;
 }
 
@@ -72,7 +71,6 @@ void thread_pool<Result>::routine() {
             m_tasks.pop(task);
         }
         std::get<1>(task)(std::get<0>(task));
-        std::this_thread::sleep_for(std::chrono::seconds(5 + std::rand() % 6));
     }
 }
 
@@ -94,9 +92,9 @@ int thread_pool<Result>::add_task(Function&& func) {
         };
 
         m_tasks.emplace({lastId, std::move(wrapped_task)});
-        m_task_waiter.notify_one();
     }
 
+    m_task_waiter.notify_one();
     return lastId;
 }
 

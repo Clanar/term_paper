@@ -1,22 +1,56 @@
 #include "thread_pool.h"
 #include "inverted_index.h"
-#include <boost/asio.hpp>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <iostream>
+#include <thread>
+#include <mutex>
+#include <vector>
+#include <condition_variable>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <unistd.h>
 
 namespace fs = std::filesystem;
-using boost::asio::ip::tcp;
 
 class TaskServer {
 public:
-    TaskServer(thread_pool<int>& pool, unsigned short port, const std::string& base_dir)
-        : pool_(pool), file_manager_(base_dir), acceptor_(io_context_, tcp::endpoint(tcp::v4(), port)) {}
+    TaskServer(thread_pool<int>& worker_pool, thread_pool<int>& scheduler_pool, unsigned short port, const std::string& base_dir)
+        : worker_pool_(worker_pool), scheduler_pool_(scheduler_pool), file_manager_(base_dir), port_(port) {}
 
     void start() {
-        accept_connections();
-        io_context_.run();
+        int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+        if (server_fd == -1) {
+            throw std::runtime_error("Failed to create socket");
+        }
+
+        sockaddr_in address{};
+        address.sin_family = AF_INET;
+        address.sin_addr.s_addr = INADDR_ANY;
+        address.sin_port = htons(port_);
+
+        if (bind(server_fd, (struct sockaddr*)&address, sizeof(address)) < 0) {
+            throw std::runtime_error("Bind failed");
+        }
+
+        if (listen(server_fd, 5) < 0) {
+            throw std::runtime_error("Listen failed");
+        }
+
+        std::cout << "Server running on port " << port_ << std::endl;
+
+        while (true) {
+            int client_fd = accept(server_fd, nullptr, nullptr);
+            if (client_fd >= 0) {
+                scheduler_pool_.add_task([this, client_fd] {
+                    this->handle_client(client_fd);
+                    return 0;
+                });
+            }
+        }
+
+        close(server_fd);
     }
 
 private:
@@ -53,85 +87,81 @@ private:
         std::string base_dir_;
     };
 
-    void accept_connections() {
-        auto socket = std::make_shared<tcp::socket>(io_context_);
-        acceptor_.async_accept(*socket, [this, socket](boost::system::error_code error) {
-            if (!error) {
-                handle_client(socket);
-            }
-            accept_connections();
-        });
-    }
+    void handle_client(int client_fd) {
+        char buffer[1024] = {0};
+        ssize_t bytes_read = read(client_fd, buffer, sizeof(buffer));
+        if (bytes_read > 0) {
+            std::istringstream stream(buffer);
+            std::string command, filename, content;
+            stream >> command;
 
-    void handle_client(std::shared_ptr<tcp::socket> socket) {
-        auto buffer = std::make_shared<boost::asio::streambuf>();
-        boost::asio::async_read_until(*socket, *buffer, '\n',
-            [this, socket, buffer](boost::system::error_code error, std::size_t) {
-                if (!error) {
-                    std::istream stream(buffer.get());
-                    std::string command, filename, content;
-                    stream >> command;
-
-                    if (command == "ADD") {
-                        stream >> filename;
-                        std::getline(stream, content);
-                        if (file_manager_.add_file(filename, content)) {
-                            pool_.add_task([this, filename, content] {
-                                index_.add_file(filename, content);
-                                return 0;
-                            });
-                            respond(socket, "File added successfully\n");
-                        } else {
-                            respond(socket, "Failed to add file\n");
-                        }
-                    } else if (command == "DELETE") {
-                        stream >> filename;
-                        if (file_manager_.delete_file(filename)) {
-                            pool_.add_task([this, filename] {
-                                index_.delete_file(filename);
-                                return 0;
-                            });
-                            respond(socket, "File deleted successfully\n");
-                        } else {
-                            respond(socket, "Failed to delete file\n");
-                        }
-                    } else if (command == "SEARCH") {
-                        stream >> content;
-                        auto results = index_.search(content);
-                        std::ostringstream response;
-                        for (const auto& result : results) {
-                            response << result << "\n";
-                        }
-                        respond(socket, response.str());
-                    } else {
-                        respond(socket, "Invalid command\n");
-                    }
+            if (command == "ADD") {
+                stream >> filename;
+                std::getline(stream, content);
+                if (file_manager_.add_file(filename, content)) {
+                    worker_pool_.add_task([this, filename, content] {
+                        index_.add_file(filename, content);
+                        return 0;
+                    });
+                    send_response(client_fd, "File added successfully\n");
+                } else {
+                    send_response(client_fd, "Failed to add file\n");
                 }
-            });
+            } else if (command == "DELETE") {
+                stream >> filename;
+                if (file_manager_.delete_file(filename)) {
+                    worker_pool_.add_task([this, filename] {
+                        index_.delete_file(filename);
+                        return 0;
+                    });
+                    send_response(client_fd, "File deleted successfully\n");
+                } else {
+                    send_response(client_fd, "Failed to delete file\n");
+                }
+            } else if (command == "SEARCH") {
+                stream >> content;
+                auto results = index_.search(content);
+                std::ostringstream response;
+                for (const auto& result : results) {
+                    response << result << "\n";
+                }
+                send_response(client_fd, response.str());
+            } else {
+                send_response(client_fd, "Invalid command\n");
+            }
+        }
+
+        close(client_fd);
     }
 
-    void respond(std::shared_ptr<tcp::socket> socket, const std::string& message) {
-        boost::asio::async_write(*socket, boost::asio::buffer(message),
-            [socket](boost::system::error_code, std::size_t) {});
+    void send_response(int client_fd, const std::string& message) {
+        send(client_fd, message.c_str(), message.size(), 0);
     }
 
-    thread_pool<int>& pool_;
+    thread_pool<int>& worker_pool_;
+    thread_pool<int>& scheduler_pool_;
     FileManager file_manager_;
     InvertedIndex index_;
-    boost::asio::io_context io_context_;
-    tcp::acceptor acceptor_;
+    unsigned short port_;
 };
 
 int main() {
-    thread_pool<int> pool;
-    pool.initialize(6);
+    thread_pool<int> worker_pool;
+    worker_pool.initialize(5);
+
+    thread_pool<int> scheduler_pool;
+    scheduler_pool.initialize(5);
 
     const unsigned short port = 12345;
     const std::string base_dir = "./server_files";
-    TaskServer server(pool, port, base_dir);
+    TaskServer server(worker_pool, scheduler_pool, port, base_dir);
 
-    std::cout << "Server running on port " << port << std::endl;
-    server.start();
+    try {
+        server.start();
+    } catch (const std::exception& ex) {
+        std::cerr << "Error: " << ex.what() << std::endl;
+        return 1;
+    }
 
     return 0;
 }

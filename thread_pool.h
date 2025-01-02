@@ -23,8 +23,7 @@ public:
     bool working() const;
 
     template <typename Function>
-int add_task(Function&& func);
-
+    int add_task(Function&& func);
 
     Result get_results(int id);
 
