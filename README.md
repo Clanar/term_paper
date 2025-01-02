@@ -3,7 +3,7 @@
 
 **Server:**
 ```
-g++ -o termpaper  main.cpp inverted_index.cpp
+g++ -o termpaper main.cpp task_queue.cpp inverted_index.cpp
 ```
 ```
 ./termpaper
