@@ -11,7 +11,7 @@ g++ -o termpaper main.cpp task_queue.cpp inverted_index.cpp
 
 **Result:**
 
-![зображення](https://github.com/user-attachments/assets/9ae8145f-d5c4-4ba1-b8f6-caaec5233ff3)
+![зображення](https://github.com/user-attachments/assets/7a1b1903-5d00-4794-870f-32d034b50763)
 
 **Client cpp:**
 ```
@@ -23,7 +23,7 @@ g++ -o client_cpp client.cpp
 
 **Result:**
 
-![зображення](https://github.com/user-attachments/assets/9c3f5862-b1cf-4705-b771-f2b3cabc3e0f)
+![зображення](https://github.com/user-attachments/assets/9254220d-b641-4143-896f-d8c1405478e7)
 
 **Manual request to the server**
 **Add file:**
