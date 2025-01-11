@@ -126,6 +126,9 @@ private:
                     response << result << "\n";
                 }
                 send_response(client_fd, response.str());
+            } else if (command == "CHECK_INDEX") {
+                size_t count = index_.get_indexed_files_count();
+            send_response(client_fd, std::to_string(count) + "\n");
             } else {
                 send_response(client_fd, "Invalid command\n");
             }

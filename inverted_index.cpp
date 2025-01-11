@@ -9,6 +9,7 @@ void InvertedIndex::add_file(const std::string& filename, const std::string& con
     while (stream >> word) {
         index_[word].push_back(filename);
     }
+    indexed_files_count_++;
 }
 
 void InvertedIndex::delete_file(const std::string& filename) {
@@ -17,6 +18,7 @@ void InvertedIndex::delete_file(const std::string& filename) {
     for (auto& [word, files] : index_) {
         files.erase(std::remove(files.begin(), files.end(), filename), files.end());
     }
+    indexed_files_count_--;
 }
 
 std::vector<std::string> InvertedIndex::search(const std::string& term) const {
@@ -27,4 +29,9 @@ std::vector<std::string> InvertedIndex::search(const std::string& term) const {
         return it->second;
     }
     return {};
+}
+
+size_t InvertedIndex::get_indexed_files_count() const {
+    std::lock_guard<std::mutex> lock(index_mutex_);
+    return indexed_files_count_;
 }

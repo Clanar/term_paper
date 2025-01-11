@@ -9,7 +9,6 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
-#include <condition_variable>
 #include <algorithm>
 #include <chrono>
 #include <arpa/inet.h>
@@ -44,12 +43,20 @@ public:
     }
 
     void search_word(const std::string& word) {
-        std::vector<std::future<void>> futures;
-        for (size_t i = 0; i < thread_count_; ++i) {
-            futures.emplace_back(std::async(std::launch::async, &Client::process_search_word, this, word));
-        }
-        for (auto& future : futures) {
-            future.get();
+    try {
+        process_search_word(word);
+    } catch (const std::exception& ex) {
+        std::cerr << "Error searching for word " << word << ": " << ex.what() << "\n";
+    }
+}
+
+    size_t check_index_count() {
+        try {
+            std::string request = "CHECK_INDEX\n";
+            return std::stoul(send_request_with_response(request));
+        } catch (const std::exception& ex) {
+            std::cerr << "Error checking index: " << ex.what() << "\n";
+            return 0;
         }
     }
 
@@ -119,6 +126,30 @@ private:
 
         close(sock);
     }
+    std::string send_request_with_response(const std::string& request) {
+        int sock = socket(AF_INET, SOCK_STREAM, 0);
+        if (sock < 0) {
+            throw std::runtime_error("Socket creation failed");
+        }
+
+        sockaddr_in server_address{};
+        server_address.sin_family = AF_INET;
+        server_address.sin_port = htons(server_port_);
+        server_address.sin_addr.s_addr = inet_addr(server_address_.c_str());
+
+        if (connect(sock, (struct sockaddr*)&server_address, sizeof(server_address)) < 0) {
+            close(sock);
+            throw std::runtime_error("Connection failed");
+        }
+
+        send(sock, request.c_str(), request.size(), 0);
+
+        char buffer[1024] = {0};
+        read(sock, buffer, sizeof(buffer));
+        
+        close(sock);
+        return std::string(buffer);
+    }
 
     std::string server_address_;
     unsigned short server_port_;
@@ -128,7 +159,7 @@ private:
 int main() {
     const std::string server_address = "127.0.0.1";
     const unsigned short server_port = 12345;
-    const size_t thread_count = 4; // Change the number of threads here
+    const size_t thread_count = 5;
 
     const std::string datasets_folder = "./datasets";
     if (!fs::exists(datasets_folder) || !fs::is_directory(datasets_folder)) {
@@ -142,8 +173,22 @@ int main() {
 
     try {
         std::cout << "Adding files to the server:\n";
-        client.add_files(datasets_folder);
-
+        auto index_start_time = std::chrono::high_resolution_clock::now();
+        size_t total_files = std::distance(fs::directory_iterator(datasets_folder), fs::directory_iterator{});
+        client.add_files(datasets_folder);        
+        
+        while (true) {
+            size_t indexed_count = client.check_index_count();
+            std::cout << "Indexed files: " << indexed_count << "/" << total_files << "\n";
+            if (indexed_count == total_files) {
+                auto index_end_time = std::chrono::high_resolution_clock::now();
+                std::chrono::duration<double> index_time = index_end_time - index_start_time;
+                std::cout << "Indexing completed in: " << index_time.count() << " seconds\n";
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        size_t indexed_count = client.check_index_count();
         std::cout << "Deleting files from the server:\n";
         client.delete_files({"5.txt", "6.txt"});
 
