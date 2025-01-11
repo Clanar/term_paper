@@ -198,11 +198,5 @@ int main() {
     } catch (const std::exception& ex) {
         std::cerr << "Exception: " << ex.what() << "\n";
     }
-
-    auto overall_end_time = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> overall_elapsed_seconds = overall_end_time - overall_start_time;
-
-    std::cout << "Total execution time: " << overall_elapsed_seconds.count() << " seconds\n";
-
     return 0;
 }
